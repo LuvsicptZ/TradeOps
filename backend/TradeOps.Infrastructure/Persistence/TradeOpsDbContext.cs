@@ -29,6 +29,7 @@ public class TradeOpsDbContext : DbContext
             e.Property(x => x.Email).IsRequired().HasMaxLength(320);
             e.Property(x => x.PasswordHash).IsRequired().HasMaxLength(256);
             e.Property(x => x.Role).IsRequired().HasMaxLength(20);
+            e.HasIndex(x => new { x.TenantId, x.Email }).IsUnique();
 
             e.HasOne(x => x.Tenant)
                 .WithMany(t => t.Users)
