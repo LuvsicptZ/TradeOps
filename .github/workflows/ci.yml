@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Restore backend
+        run: dotnet restore backend/TradeOps.sln
+
+      - name: Build backend
+        run: dotnet build backend/TradeOps.sln --configuration Release --no-restore
+
+      - name: Test backend (if test projects exist)
+        shell: bash
+        run: |
+          if compgen -G "backend/**/*.Tests.csproj" > /dev/null; then
+            dotnet test backend/TradeOps.sln --configuration Release --no-build
+          else
+            echo "No test projects found. Skipping dotnet test."
+          fi
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
