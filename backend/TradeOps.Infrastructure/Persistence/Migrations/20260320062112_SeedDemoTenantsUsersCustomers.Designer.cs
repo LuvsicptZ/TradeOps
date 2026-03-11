@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TradeOps.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using TradeOps.Infrastructure.Persistence;
 namespace TradeOps.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TradeOpsDbContext))]
-    partial class TradeOpsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260320062112_SeedDemoTenantsUsersCustomers")]
+    partial class SeedDemoTenantsUsersCustomers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
