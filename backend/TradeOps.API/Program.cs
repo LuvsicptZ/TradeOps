@@ -1,26 +1,67 @@
-using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
-using TradeOps.Domain.Entities;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using TradeOps.Application.Abstractions;
+using TradeOps.Application.Services;
+using TradeOps.Infrastructure.Middleware;
 using TradeOps.Infrastructure.Persistence;
+using TradeOps.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddControllers();
+
+var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
+builder.Services.Configure<JwtOptions>(jwtSection);
+var jwtOptions = jwtSection.Get<JwtOptions>() ?? new JwtOptions();
+
+if (string.IsNullOrWhiteSpace(jwtOptions.SecretKey) || jwtOptions.SecretKey.Length < 32)
+{
+    throw new InvalidOperationException(
+        "请在配置中设置 Jwt:SecretKey，且长度至少 32 个字符（可使用 User Secrets 或环境变量）。");
+}
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SecretKey)),
+            ValidIssuer = jwtOptions.Issuer,
+            ValidAudience = jwtOptions.Audience,
+            ClockSkew = TimeSpan.FromMinutes(2),
+            RoleClaimType = ClaimTypes.Role
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+builder.Services.AddScoped<ICurrentTenant, CurrentTenant>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+builder.Services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
+
 builder.Services.AddDbContext<TradeOpsDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+builder.Services.AddScoped<ITradeOpsDbContext>(sp => sp.GetRequiredService<TradeOpsDbContext>());
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseMiddleware<TenantContextMiddleware>();
+app.UseAuthorization();
 
 app.MapGet("/", () => Results.Ok("TradeOps API is running."));
 
@@ -31,76 +72,6 @@ app.MapGet("/health", () => Results.Ok(new
     utcTime = DateTime.UtcNow
 }));
 
-app.MapPost("/users", async (CreateUserRequest request, TradeOpsDbContext db) =>
-{
-    if (request.TenantId == Guid.Empty)
-    {
-        return Results.BadRequest(new { message = "TenantId is required." });
-    }
-
-    if (string.IsNullOrWhiteSpace(request.Email))
-    {
-        return Results.BadRequest(new { message = "Email is required." });
-    }
-
-    if (string.IsNullOrWhiteSpace(request.Password))
-    {
-        return Results.BadRequest(new { message = "Password is required." });
-    }
-
-    var tenantExists = await db.Tenants.AnyAsync(t => t.Id == request.TenantId);
-    if (!tenantExists)
-    {
-        return Results.BadRequest(new { message = "Tenant not found." });
-    }
-
-    var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-    var userExists = await db.Users.AnyAsync(u =>
-        u.TenantId == request.TenantId && u.Email == normalizedEmail);
-
-    if (userExists)
-    {
-        return Results.Conflict(new { message = "Email already exists in this tenant." });
-    }
-
-    var user = new User
-    {
-        Id = Guid.NewGuid(),
-        TenantId = request.TenantId,
-        Email = normalizedEmail,
-        PasswordHash = ComputeSha256(request.Password),
-        Role = string.IsNullOrWhiteSpace(request.Role) ? "Staff" : request.Role.Trim()
-    };
-
-    db.Users.Add(user);
-    await db.SaveChangesAsync();
-
-    return Results.Created($"/users/{user.Id}", new UserResponse(
-        user.Id,
-        user.TenantId,
-        user.Email,
-        user.Role
-    ));
-});
+app.MapControllers();
 
 app.Run();
-
-static string ComputeSha256(string value)
-{
-    var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-    return Convert.ToHexString(bytes);
-}
-
-public sealed record CreateUserRequest(
-    Guid TenantId,
-    string Email,
-    string Password,
-    string? Role
-);
-
-public sealed record UserResponse(
-    Guid Id,
-    Guid TenantId,
-    string Email,
-    string Role
-);

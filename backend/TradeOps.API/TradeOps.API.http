@@ -1,6 +1,25 @@
-@TradeOps.API_HostAddress = http://localhost:5004
+@TradeOps.API_HostAddress = https://localhost:7262
+@token = <paste_access_token_here>
 
-GET {{TradeOps.API_HostAddress}}/weatherforecast/
+###
+
+GET {{TradeOps.API_HostAddress}}/health
 Accept: application/json
+
+###
+
+POST {{TradeOps.API_HostAddress}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@acme.demo",
+  "password": "Password1!"
+}
+
+###
+
+GET {{TradeOps.API_HostAddress}}/customers
+Accept: application/json
+Authorization: Bearer {{token}}
 
 ###
